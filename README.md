@@ -81,7 +81,7 @@ rename cleanup error, separate HTTP/File/staging/Root/Context cleanup statuses,
 possible staging residue, received and written byte counts. HTTP and FS status
 types are exposed losslessly; their supported contracts are part of this
 experimental interface. `describe(result)` formats fixed labels/numbers without
-printing, URLs, names, keys or signatures. Helper functions/storage are internal.
+printing or including URLs, names, keys or signatures. Helper functions/storage are internal.
 
 | Publication | Caller interpretation |
 | --- | --- |
@@ -122,4 +122,5 @@ make sanitize SANITIZER_CC=clang
 Select an existing matching compiler with `GOOSE=/absolute/path/to/goose`.
 The [CLI example](examples/download/README.md) owns signal handlers and exit
 policy. See [design](docs/DESIGN.md), [contributing](CONTRIBUTING.md),
-[security](SECURITY.md) and [notices](THIRD_PARTY_NOTICES.md).
+[security](SECURITY.md), [validation](docs/VALIDATION.md) and
+[notices](THIRD_PARTY_NOTICES.md).

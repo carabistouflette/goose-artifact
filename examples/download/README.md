@@ -109,8 +109,8 @@ writes, sync and close can wait longer.
 
 ## Validation harness
 
-The extraction reruns these regressions through the public artifact interface.
-Validation records identify the exact tested source at publication.
+See the [validation record](../../docs/VALIDATION.md) for exact tested sources,
+raw results and limits. Hosted CI repeats the checks independently.
 
 ```sh
 python3 tests/integration.py --goose .toolchain/goose/build/goose --cc gcc
