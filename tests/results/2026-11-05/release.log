@@ -1,0 +1,29 @@
+python3 examples/download/signals/fingerprint.py --check
+"/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" format --check artifact.goose tests examples
+"/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" check tests/api.goose
+"/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" check examples/download/main.goose
+python3 -m py_compile tests/*.py examples/download/signals/fingerprint.py
+git diff --check
+mkdir -p .build
+"/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" run tests/api.goose
+artifact public interface: default and opaque cancellation passed
+"/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" run tests/api.goose --debug
+artifact public interface: default and opaque cancellation passed
+"/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" build tests/api.goose --standalone --cc "gcc" -O2 -o .build/api
+built .build/api
+./.build/api
+artifact public interface: default and opaque cancellation passed
+mkdir -p .build
+gcc -std=c11 -Wall -Wextra -Werror examples/download/signals/test.c examples/download/signals/signals.c -Wl,--wrap=sigaction -o .build/signals
+./.build/signals
+download signal guard: lifecycle, repeated signals, prior actions and partial failures passed
+python3 tests/integration.py --goose "/tmp/goose-http-standalone-kn_xeeq3/.toolchain/goose/build/goose" --cc "gcc" --output ".build/release-final.json"
+building the package signals's C with CMake
+built /home/arobin/Work/Projects/goose-libs/libraries/goose-artifact/.build/download-gcc-cf2dae15a017fab5/download-fixture
+building the package signals's C with CMake
+built /home/arobin/Work/Projects/goose-libs/libraries/goose-artifact/.build/download-gcc-cf2dae15a017fab5/download-production
+download compiler transcript: /home/arobin/Work/Projects/goose-libs/libraries/goose-artifact/.build/download-gcc-cf2dae15a017fab5/compiler-commands.jsonl
+built /home/arobin/Work/Projects/goose-libs/libraries/goose-artifact/.build/download-gcc-cf2dae15a017fab5/download-recovery
+built /home/arobin/Work/Projects/goose-libs/libraries/goose-artifact/.build/download-gcc-cf2dae15a017fab5/artifact-callbacks
+artifact integration: 68 checked scenarios passed (gcc, sanitize=False)
+artifact results: .build/release-final.json
