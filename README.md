@@ -17,7 +17,7 @@ aliases; the library cannot enforce transitive versions. These are the supported
 and tested identities (other selections require caller compatibility validation):
 
 ```goose
-import artifact from "../goose-artifact"; // local checkout; public pin supplied at publication
+import artifact from "carabistouflette/goose-artifact@c8223871ae6fc5d1bd1f43c259c1bf58cc18ab4c";
 import crypto from "carabistouflette/goose-crypto@a4643f62bd5e76b371054c6537a95169a7930101";
 import http from "carabistouflette/goose-http@aa915a0b21db1129f85e6e339a6f0171bcac0e77";
 import fs from "carabistouflette/goose-fs@cd0bd29c78c435caaebf75bfecd8e3e2083636eb";
