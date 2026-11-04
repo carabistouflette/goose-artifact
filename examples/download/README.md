@@ -12,7 +12,7 @@ and filesystem retained I/O and checked rename at
 
 ## Build and run
 
-Requirements: the pinned Goose compiler, Linux x86-64/glibc, C/C++17 compilers,
+Requirements: the pinned Goose compiler, Linux x86-64/glibc, C/C++20 toolchain,
 CMake, pkg-config, libsodium >=1.0.18, libcurl >=7.85 with TLS and asynchronous DNS.
 Ubuntu development packages include `libsodium-dev libcurl4-openssl-dev` plus the
 usual Goose build prerequisites. Python cryptography is used only by the tests.
@@ -85,7 +85,7 @@ Publication and cleanup results remain separate:
   rolled back. This conservative result also covers a raced EEXIST. Verified
   staging may remain, even when the final entry was actually created.
 
-The fixed `download:` diagnostic contains stage, publication, primary errno,
+The fixed `artifact:` diagnostic contains stage, publication, primary errno,
 separate cleanup statuses, byte counts, sync result and whether staging may
 remain. It does not echo URLs, keys, signatures or untrusted filenames. An unlink
 error means residue *may* remain, not proof that it still exists. A published
