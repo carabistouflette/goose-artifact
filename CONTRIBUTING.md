@@ -20,3 +20,19 @@ Do not commit binaries, toolchains, credentials or private notes. Raw validation
 records may be committed with exact identities and limitations. Measure before
 optimizing; bounded memory is not a hard RSS or wall-time promise. CI checks
 correctness, not timing thresholds or universal rankings.
+
+## Setup
+
+Use the pinned Goose compiler, Git, Make, CMake >=3.27, a C/C++20 toolchain,
+Python >=3.11 with cryptography, pkg-config, libsodium >=1.0.18, libcurl >=7.85 with
+TLS/asynchronous DNS, and simdjson development packages. On Ubuntu:
+
+```sh
+sudo apt-get install build-essential cmake ninja-build python3 python3-cryptography pkg-config libsodium-dev libcurl4-openssl-dev libsimdjson-dev clang git
+make setup
+make check test
+make sanitize SANITIZER_CC=gcc
+make sanitize SANITIZER_CC=clang
+```
+
+An existing matching compiler can be selected with `GOOSE=/path/to/goose`.

@@ -1,126 +1,110 @@
 # goose-artifact
 
-Bounded authenticated HTTPS staging and checked file publication for
-[Goose](https://github.com/aardappel/goose). Apache-2.0, experimental interface.
-Initially Linux x86-64/glibc only; no compatibility promise before 1.0.
+Verify signed metadata, download an HTTPS file into private staging, then publish
+it without overwriting an existing file. The library reports publication and
+cleanup separately, including uncertain rename outcomes. Apache-2.0.
 
-`execute` authenticates exact metadata bytes, incrementally hashes bounded HTTP
-chunks while writing a private staging file, and publishes only after clean
-transport completion, digest equality, checked data sync and consumed close.
-Callers receive independent publication, cleanup and possible-residue results.
-The implementation is extracted from the reviewed goose-crypto streaming example.
+Experimental synchronous API, tested on Linux x86-64/glibc. The released
+[v0.1.0-alpha.1](https://github.com/carabistouflette/goose-artifact/releases/tag/v0.1.0-alpha.1)
+is `c2d190b613c541a5dba839ce380de8b111c9ab0c`. Main adds documentation;
+[the source check](docs/AUDIT.md) identifies unchanged implementation/dependencies.
 
-## Use
+## Quickstart
 
-Goose requires dependencies in the application's root source. Declare all five
-aliases; the library cannot enforce transitive versions. These are the supported
-and tested identities (other selections require caller compatibility validation):
+Use the pinned Goose compiler and native dependencies listed in
+[CONTRIBUTING.md](CONTRIBUTING.md). Save this as `main.goose`, then run
+`goose run main.goose`. At runtime this smoke checks argument rejection without
+reading artifact files or making a network request. Building may fetch the pinned
+packages. A successful signed download is shown
+in the [local CLI demonstration](examples/download/README.md).
+
+All five package aliases belong in the application's root source. Goose does not
+enforce transitive versions: these exact versions are the tested combination.
 
 ```goose
-import artifact from "carabistouflette/goose-artifact@c8223871ae6fc5d1bd1f43c259c1bf58cc18ab4c";
+import artifact from "carabistouflette/goose-artifact@c2d190b613c541a5dba839ce380de8b111c9ab0c";
 import crypto from "carabistouflette/goose-crypto@a4643f62bd5e76b371054c6537a95169a7930101";
 import http from "carabistouflette/goose-http@aa915a0b21db1129f85e6e339a6f0171bcac0e77";
 import fs from "carabistouflette/goose-fs@cd0bd29c78c435caaebf75bfecd8e3e2083636eb";
 import json_codec from "carabistouflette/goose-json@3fa7b5275399641f8069698b6c097ea66cef7929";
-```
-
-Construct an `artifact::Request` with `metadata_path`, `signature_hex`,
-`trusted_key_hex`, independently authorized `expected_url`, `private_parent`,
-`staging_leaf`, `final_leaf` and `byte_limit`. All byte views remain valid and
-unchanged for the entire call. No input references survive the call.
-
-```goose
-let result = artifact::execute(request);
-if result.stage == artifact::Stage.None {
-    assert(result.publication == artifact::Publication.Applied);
+import std;
+fn main() {
+    let request = artifact::Request {
+        metadata_path: "", signature_hex: "", trusted_key_hex: "",
+        expected_url: "", private_parent: "", staging_leaf: "",
+        final_leaf: "", byte_limit: 0,
+    };
+    let result = artifact::execute(request);
+    assert(result.stage == artifact::Stage.InvalidInput);
+    assert(result.publication == artifact::Publication.NotAttempted);
+    print(artifact::describe(result));
 }
 ```
 
-An overload accepts a compile-time function returning i64, polled synchronously:
+For real requests, keep every borrowed input valid and unchanged for the entire
+call. Supply an independently trusted key, signed metadata, authorized URL,
+private parent and distinct staging/final leaves. See [DESIGN.md](docs/DESIGN.md)
+for fields, cancellation and the complete input contract.
 
-```goose
-fn poll_cancel() -> i64 { return 0; } // application-owned cancellation state
-let result = artifact::execute(request, poll_cancel);
-```
+## What the call does
 
-Zero means continue; any nonzero value is an opaque cancellation reason retained
-in `Result.cancellation_reason` when cancellation is observed. The default has no
-polling behavior. Polls must be quick, nonblocking, and must not mutate borrowed
-inputs, destination names or owned resources. Prefer a named function. Normal
-return is required to receive a Result. A nonlocal block return runs resource
-cleanup through Goose defer but returns no Result; cleanup errors then cannot be
-inspected. Exit/abort/crash/SIGKILL cleanup is not guaranteed. No user callback
-crosses native FFI, no callback is stored, and the library installs no signals.
+1. Read at most 16 KiB of metadata; verify its exact bytes before JSON parsing,
+   network setup or filesystem mutation. Metadata has exactly `url` and `sha256`.
+2. Require its signed URL to equal the independently authorized HTTPS URL.
+   Strict hex sizes are 128 characters for signatures and 64 for keys/digests.
+3. Stream bounded chunks into a new private staging file while hashing them.
+   Require clean terminal HTTP 200 and the signed digest, not an early status
+   or a matching digest for a truncated prefix.
+4. Check file-data sync and close, then attempt a no-replace rename with parent
+   synchronization. Return primary status, publication, cleanup and possible residue.
 
-## Inputs and trust
+The caller supplies key/digest trust, protocol context, encoding, freshness,
+rollback prevention, origin/address policy and installation authorization.
+A key downloaded alongside the file does not establish trust. This module does
+not extract, install or execute the payload.
 
-Metadata is at most 16 KiB and has exactly `url` and `sha256` fields. Sign its exact
-bytes, including encoding, whitespace and field order. The signature is 128 hex
-characters, key 64 hex and digest 64 hex. Strict hex rejects malformed lengths or
-characters. Invalid signatures and backend verification errors have distinct
-stages. Signature verification precedes JSON parsing, mutation and networking.
-The signed URL must equal the independently authorized HTTPS URL exactly.
+## Filesystem and outcome requirements
 
-The caller establishes key/expected-digest trust and owns key rotation, protocol
-context, expiry, freshness, rollback prevention, origin/address policy and
-installation authorization. A digest or key downloaded alongside the artifact
-does not establish its trust. This module neither extracts nor executes payloads.
+Metadata/parent paths are strict absolute paths without symlink components,
+`.`/`..` or repeated separators. The parent has no group/other permissions and
+no other writers during the call, including the same UID. Names must be distinct
+nonaliasing filesystem lookups: lower-case ASCII `[a-z0-9][a-z0-9._-]*`, at most
+255 bytes, no trailing dot. These conditions do not defend against a same-UID
+process that violates them or exotic name-aliasing filesystems.
 
-Metadata and parent use strict absolute paths without symlink components, `.` or
-`..`, or repeated separators. The parent has no group/other permissions and no
-other writers throughout the call, including same-UID writers. Leaves are
-filesystem-distinct and nonaliasing, lower-case ASCII matching
-`[a-z0-9][a-z0-9._-]*`, at most 255 bytes and no trailing dot. Exotic aliasing
-filesystems and hostile same-UID namespace changes violate the contract.
+Only `Stage.None` means complete success. Inspect publication even on error:
 
-## Publication and errors
-
-Only `Stage.None` means a completed successful call. `Result` preserves the primary
-stage/errno/HTTP status, cancellation reason, publication, parent-sync state,
-rename cleanup error, separate HTTP/File/staging/Root/Context cleanup statuses,
-possible staging residue, received and written byte counts. HTTP and FS status
-types are exposed losslessly; their supported contracts are part of this
-experimental interface. `describe(result)` formats fixed labels/numbers without
-printing or including URLs, names, keys or signatures. Helper functions/storage are internal.
-
-| Publication | Caller interpretation |
+| Publication | Meaning |
 | --- | --- |
-| NotAttempted | Publication syscall did not run; owned staging cleanup is attempted |
-| Applied | Bytes were published; a later error does not roll them back |
-| Unknown | Publication may have happened; never retry, roll back or speculatively unlink |
+| `NotAttempted` | Rename did not run; owned staging cleanup is attempted |
+| `Applied` | File was published; later errors do not undo it |
+| `Unknown` | Publication may have happened; do not retry, roll back or speculatively unlink |
 
-Initial absence is checked before CreateNew; a failed exclusive open can still
-create an owned entry without a File token. Preexisting collisions are preserved.
-Close consumes the File even on error and is not retried. The last cancellation
-poll before rename is the commitment point; cancellation afterward cannot revoke
-an attempted publication. NoReplace and checked parent synchronization preserve
-outcomes independently from errors. A nonzero error can coexist with Applied.
-Sync reports filesystem/kernel promises, not universal crash durability.
+Preexisting entries are preserved. A failed exclusive open can still create an
+owned staging entry without returning a File. Close consumes its File even on
+error and is not retried. Cleanup errors, parent-sync state and possible residue
+remain separate from the primary error. Sync is not a universal crash-durability
+promise. `describe(result)` formats labels/numbers without echoing URLs, keys,
+signatures or filenames.
 
-Memory scales with fixed metadata/header/chunk buffers and backend behavior,
-not the artifact total. Body cap is 0..1 GiB, chunks 64 KiB, metadata/headers 16 KiB.
-HTTP uses verified TLS, HTTP/1.1, identity encoding, no redirects/proxies/credentials.
-Clean terminal HTTP200 and digest equality are both required; matching a truncated
-prefix's digest is insufficient. Transfer budget 300 s, connect 10 s and pump 20 ms
-are not hard wall deadlines: DNS cleanup and filesystem writes/sync/close can block.
+## Limits and cancellation
 
-## Development
+Body limit: 0..1 GiB; chunks: 64 KiB; metadata/headers: 16 KiB. HTTP uses verified
+TLS, identity encoding, HTTP/1.1, no redirects/proxies/credentials. Transfer 300 s,
+connect 10 s and pump 20 ms are budgets, not hard wall deadlines: DNS cleanup and
+filesystem calls may wait longer. No complete artifact buffer is allocated;
+backend buffers and runtime behavior still prevent a hard allocator/RSS claim.
 
-Pinned Goose compiler (`GOOSE_REVISION`), CMake >=3.27, C/C++20 toolchain, Make,
-Python >=3.11 with cryptography, pkg-config, libsodium >=1.0.18, libcurl >=7.85
-with TLS/asynchronous DNS and simdjson development packages are needed. Ubuntu:
-`build-essential cmake ninja-build python3 python3-cryptography pkg-config
-libsodium-dev libcurl4-openssl-dev libsimdjson-dev clang git`.
+`execute(request)` does not poll cancellation. An overload accepts a named
+compile-time function returning i64: zero continues; nonzero is an opaque reason
+retained when cancellation is observed. Polls must be quick/nonblocking and must
+not mutate inputs, names or resources. No callback is stored or crosses native FFI;
+the library installs no signals. Normal return is required to receive a Result.
+A nonlocal block return runs defer cleanup but returns no Result/cleanup errors.
+Exit/abort/crash/SIGKILL cleanup is not guaranteed. The final poll before rename is
+the commitment point; cancellation afterward cannot revoke an attempted rename.
 
-```sh
-make setup
-make format check test
-make sanitize SANITIZER_CC=gcc
-make sanitize SANITIZER_CC=clang
-```
-
-Select an existing matching compiler with `GOOSE=/absolute/path/to/goose`.
-The [CLI example](examples/download/README.md) owns signal handlers and exit
-policy. See [design](docs/DESIGN.md), [contributing](CONTRIBUTING.md),
-[security](SECURITY.md), [validation](docs/VALIDATION.md) and
-[notices](THIRD_PARTY_NOTICES.md).
+[The CLI](examples/download/README.md) supplies SIGINT/SIGTERM and exit codes.
+[Validation](docs/VALIDATION.md) records correctness/resource checks, not a speed
+claim. [AUDIT.md](docs/AUDIT.md) explains why a throughput benchmark is N/A.
+See also [security](SECURITY.md) and [notices](THIRD_PARTY_NOTICES.md).

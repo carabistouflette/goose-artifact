@@ -1,5 +1,9 @@
 # Local validation — 2026-11-05
 
+Historical validation record. [AUDIT.md](AUDIT.md) checks current source
+identity and examples; the records below keep their original identities.
+
+
 Validated library, CLI and harness:
 `60047bda596d457eb87f73e51e68dea96bc5f0ec`, clean working tree. This record,
 raw evidence and a README wording correction were added afterward without
@@ -62,3 +66,18 @@ crash cleanup, hard deadlines or universal filesystem durability. Caller trust,
 freshness, rollback and installation policy and private/no-other-writers/nonaliasing
 namespace preconditions remain explicit. Existing crypto release and parent pins
 are unchanged.
+
+## Reproduce the current checks
+
+Install [development prerequisites](../CONTRIBUTING.md), then:
+
+```sh
+make setup
+make check
+make test
+make sanitize SANITIZER_CC=gcc
+make sanitize SANITIZER_CC=clang
+```
+
+An existing matching compiler may be selected with `GOOSE=/path/to/goose`. New
+records describe the checked-out source, not the historical commit above.

@@ -1,66 +1,75 @@
-# Artifact library extraction contract
+# Artifact API contract
 
-Source: goose-crypto b0deb95f6e7fe82aa1e38fad8ca24d69c6a31c7d,
-examples/download. Preserve authentication ordering and resource/publication
-semantics while extracting a reusable synchronous module.
+## Request and result
 
-## Interface
+`artifact::execute(request) -> Result` is synchronous. Request fields are
+`metadata_path`, `signature_hex`, `trusted_key_hex`, independently authorized
+`expected_url`, `private_parent`, `staging_leaf`, `final_leaf` and `byte_limit`.
+Borrowed byte views must remain valid and unchanged through the call; none are
+retained afterward. Use only the public Request/Result/Stage/Publication and
+execute/describe interface; implementation helpers/storage are internal.
 
-`artifact::execute(request) -> Result` performs no implicit cancellation polling.
-An overload accepts a compile-time cancellation function returning i64: zero
-continues, nonzero requests cancellation with an opaque caller reason. Polls are
-synchronous and bounded by the existing workflow checkpoints. No callbacks cross
-native FFI. No process-global signal policy, printing or exit in the library.
-The CLI example owns SIGINT/SIGTERM handlers, diagnostics and exit-code mapping.
+Goose requires root-source imports for artifact, crypto, http, fs and json_codec.
+[README.md](../README.md) pins the tested combination. Other versions require
+caller compatibility testing; the library cannot enforce root-selected versions.
 
-Use an artifact-owned Publication enum (NotAttempted, Applied, Unknown). Preserve
-separate primary stage, backend status, cleanup errors, sync state, byte counts
-and possible residue. HTTP/FS status types are deliberately exposed losslessly;
-their supported contracts are part of this experimental interface.
+Result keeps primary stage/errno/HTTP status, cancellation reason, publication,
+parent-sync state, rename-cleanup error, separate HTTP/File/staging/Root/Context
+cleanup statuses, received/written counts and possible staging residue. HTTP/FS
+status types are exposed without discarding their fields. Only Stage.None means
+complete success. `describe` returns fixed labels/numbers, not untrusted names,
+URLs, keys or signatures. A failed call can still have Publication.Applied.
 
-A void implementation helper owns Resources and writes the caller's Result.
-Register defer cleanup before any callback or resource acquisition. Its normal
-return completes cleanup before the outer execute snapshots/returns Result;
-Goose defer also runs on nonlocal block returns. Exit/abort/crash cannot guarantee
-cleanup. Callback normal return is required to receive a Result; callbacks must
-not block, mutate request inputs, alter destination names or interfere with owned
-resources. Prefer a named pure poll function. Test nonlocal escape after staging
-and body writes with surviving-process descriptor and namespace assertions.
+## Authentication and private staging
 
-## Invariants
+Metadata is a regular file capped at 16 KiB, with exactly `url` and `sha256`.
+Authenticate original bytes before parse, network or mutation. Signature hex is
+128 characters; keys and digests use 64. Malformed sizes/characters are rejected.
+Invalid signatures and verification backend failure have different stages.
+The signed URL must equal an independently authorized HTTPS URL byte for byte.
+Caller policy supplies key/expected-digest trust, serialization/encoding, protocol
+context, expiry, freshness, rollback and installation authorization.
 
-Authenticate exact bounded metadata bytes before parse, networking or filesystem
-mutation; strict signature/key/digest lengths; exact independently authorized URL.
-Caller owns expected digest/key trust, encoding, freshness, rollback and install
-authorization. No signing, trust discovery, installer, extraction or execution.
+Use strict absolute metadata/parent paths with no symlink components, repeated
+separators or dot components. The parent has no group/other permission bits or
+other writers for the full call, including same UID. Staging/final leaves must be
+filesystem-distinct nonaliasing lower-case ASCII names matching
+`[a-z0-9][a-z0-9._-]*`, at most 255 bytes and no trailing dot. Exotic aliasing or
+hostile same-UID namespace changes violate the contract.
 
-Private parent with no other writers including same UID; canonical lower-case
-ASCII distinct filesystem-nonaliasing leaves. Establish staging/final absence
-before exclusive open; failed open may create an owned entry with a zero token.
-Never delete a preexisting collision. Incremental SHA and bounded complete writes,
-separate cumulative body limit, clean terminal HTTP200 and final digest required.
+Check staging/final absence before exclusive 0600 creation. A failed open can
+create an entry without a File token; possible ownership is tracked from the
+absence check/creation attempt. Never remove a preexisting collision. Stream
+64 KiB chunks, enforce a separate cumulative 0..1 GiB limit, require complete
+writes no larger than FS's 1 MiB maximum. Require clean terminal HTTP 200 and the
+signed digest before publication; a matching truncated-prefix digest is not enough.
 
-Checked data sync, consumed close exactly once, final cancellation check, then
-NoReplace plus parent synchronization. Unknown is never retried, rolled back or
-speculatively cleaned; Applied survives late errors. Cleanup errors are separate.
-No hard wall deadline for DNS cleanup or filesystem I/O; no universal durability
-or RSS promise. Preserve prior limits: metadata16KiB, chunk64KiB, headers16KiB,
-body0..1GiB, HTTP transfer300s/connect10s, pump20ms.
+## Publication and cleanup
 
-## Dependencies and validation
+Check data sync and close before NoReplace rename with parent synchronization.
+Close consumes a File even when it fails and is never retried. Preserve independent
+NotAttempted/Applied/Unknown outcomes: Unknown is never retried, rolled back or
+speculatively cleaned; Applied survives late errors. NotAttempted allows cleanup
+of owned staging only. Cleanup errors and possible residue are reported separately.
 
-Goose honors sourced imports only in the application root. Caller root aliases:
-crypto, http, fs, json_codec and artifact. Supported/tested public identities:
-crypto a4643f62bd5e76b371054c6537a95169a7930101;
-HTTP aa915a0b21db1129f85e6e339a6f0171bcac0e77;
-FS cd0bd29c78c435caaebf75bfecd8e3e2083636eb;
-JSON 3fa7b5275399641f8069698b6c097ea66cef7929.
-The library cannot enforce root-selected versions; callers choosing others own
-compatibility. No sibling sources or parent index/pin edits. Reuse the existing
-61-case realTLS regressions through the new public interface, then extend only
-for new module contracts. Native signal guard remains CLI-only. Validate default,
-named and block cancellation, cleanup diagnostics, independent calls and public
-imported consumption. Run GCC/Clang sanitizers including C++ vptr; retain exact
-per-invocation transcripts and immutable source fingerprints. Use repeated
-independent interface/security/correctness/test-quality reviews. No universal
-performance superiority claim or new benchmark campaign.
+Cleanup runs before a normal Result is returned. A nonlocal block callback return
+also runs Goose defer cleanup, but no Result is returned and its cleanup errors
+cannot be inspected. Exit/abort/crash/SIGKILL cannot guarantee cleanup.
+
+## Cancellation and budgets
+
+The default execute has no polling. `artifact::execute(request, poll_cancel)`
+takes a named compile-time function returning i64. Zero continues; nonzero requests cancellation with an opaque caller
+reason. Polls are synchronous at workflow checkpoints. They must return quickly,
+not block, mutate inputs/destination names or interfere with owned resources.
+Prefer a named function; no callback is stored or crosses native FFI. The library
+has no signal handlers, printing or exit policy. The CLI owns those decisions.
+
+The final poll before rename is the publication commitment point. A later signal
+cannot guarantee final absence or undo an attempted publication. Metadata/headers
+are 16 KiB, chunks 64 KiB, body 0..1 GiB; HTTP transfer 300 s / connect 10 s / pump 20 ms
+budgets do not bound DNS cleanup or filesystem latency. No universal durability,
+crash cleanup or allocator/RSS guarantee is made.
+
+See [validation](VALIDATION.md) for public API, real TLS, failure and cleanup
+checks, and [AUDIT.md](AUDIT.md) for source identity and runnable examples.

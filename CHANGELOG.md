@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-Extract the verified streaming artifact workflow into an experimental reusable
-module. Default and caller-polled cancellation return explicit publication,
-cleanup and residue outcomes. CLI signal handling and exit policy remain outside
-the library. Caller trust/freshness/rollback/installation policy is unchanged.
+Simpler API/setup/download documentation and explicit example/source checks.
+
+## v0.1.0-alpha.1
+
+Reusable signed-metadata HTTPS staging and checked publication. Caller-polled
+cancellation, independent publication/cleanup/residue results, and a CLI with
+signal/exit policy separate from the library.

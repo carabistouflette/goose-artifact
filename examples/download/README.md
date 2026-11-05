@@ -5,7 +5,7 @@ SHA-256 into an exclusively created staging file, and publishes verified bytes
 with a no-replace rename. It does not buffer the complete artifact, extract it,
 install it or execute it. The artifact module owns the workflow; this CLI owns signals and exits.
 
-The example pins reviewed public sources: HTTP streaming at
+The example pins public sources: HTTP streaming at
 [`aa915a0`](https://github.com/carabistouflette/goose-http/blob/aa915a0b21db1129f85e6e339a6f0171bcac0e77/docs/API.md)
 and filesystem retained I/O and checked rename at
 [`cd0bd29`](https://github.com/carabistouflette/goose-fs/blob/cd0bd29c78c435caaebf75bfecd8e3e2083636eb/docs/RENAME.md).
@@ -14,10 +14,11 @@ and filesystem retained I/O and checked rename at
 
 Requirements: the pinned Goose compiler, Linux x86-64/glibc, C/C++20 toolchain,
 CMake, pkg-config, libsodium >=1.0.18, libcurl >=7.85 with TLS and asynchronous DNS.
-Ubuntu development packages include `libsodium-dev libcurl4-openssl-dev` plus the
+Ubuntu development packages include `libsodium-dev libcurl4-openssl-dev libsimdjson-dev` plus the
 usual Goose build prerequisites. Python cryptography is used only by the tests.
 
 ```sh
+mkdir -p .build
 .toolchain/goose/build/goose build examples/download/main.goose -o .build/download
 mkdir -m 700 /absolute/private-parent
 .build/download /absolute/metadata.json SIGNATURE_HEX TRUSTED_PUBLIC_KEY_HEX \
@@ -96,8 +97,9 @@ Successful sync reflects filesystem/kernel promises, not universal crash durabil
 
 SIGINT and SIGTERM handlers only update a lock-free flag. The caller checks it
 before mutation/network setup, between bounded pump steps and before publication;
-resource cleanup runs outside the handler. Previous handlers are restored, and
-repeated signals follow the same cooperative cleanup path. SIGINT exits 130 and
+resource cleanup runs outside the handler. Restoration of previous handlers is attempted; failures are reported separately
+and force nonzero exit even after publication. Repeated signals follow the
+same cooperative cleanup path. SIGINT exits 130 and
 SIGTERM exits 143 after cleanup when cancellation is observed.
 
 The last check immediately before rename is the publication commitment boundary.
@@ -107,53 +109,20 @@ Cancellation is best effort, not SIGKILL/crash/abort-safe. Transfer and connecti
 budgets and 20 ms pump waits are not hard wall deadlines: DNS cleanup, filesystem
 writes, sync and close can wait longer.
 
-## Validation harness
+## Runnable local demonstration
 
-See the [validation record](../../docs/VALIDATION.md) for exact tested sources,
-raw results and limits. Hosted CI repeats the checks independently.
+The production invocation above is a template. Supply your independently trusted
+key/signature, exact signed metadata, authorized URL and private destination.
+For a complete local signed download, the existing harness creates its own
+metadata and loopback TLS fixture:
 
 ```sh
-python3 tests/integration.py --goose .toolchain/goose/build/goose --cc gcc
-python3 tests/integration.py --goose .toolchain/goose/build/goose --cc gcc --sanitize
-python3 tests/integration.py --goose .toolchain/goose/build/goose --cc clang --sanitize
+python3 tests/integration.py --goose .toolchain/goose/build/goose --cc gcc --output .build/results.json
 ```
 
-Tests create signed metadata and a real loopback TLS server. Fixture-only compiler
-wrappers inject its CA for the exact localhost URL; peer/hostname checks remain
-intact. A separate production binary has no injection and rejects that CA. Fault
-wrappers are linked only at final Goose program links, never CMake probes or
-production. Clang's mixed C/C++ sanitizer-link preflight preserves explicit vptr
-checks. Generated Goose/runtime C and native C/C++ adapters are instrumented in
-sanitizer runs; separately installed system libraries are not.
-
-The matrix covers large/empty/tiny-chunk success, signature/schema/URL rejection,
-HTTP/body/header limits, matching-digest truncated transfers, redirects/TLS,
-SIGINT/SIGTERM during headers/body, cancellation before/after the publication
-boundary, partial writes/ENOSPC/zero writes, failed post-create fstat, sync/consumed
-close failures, unlink failure, and NotAttempted/Applied/Unknown rename outcomes.
-Native hooks test late errors with and without actual movement. Exact exits and
-stages are required; a crash or fixture exit cannot count as expected rejection.
-Existing bytes and staging-residue policy are checked. Surviving-process loops
-repeat digest and write failures while asserting stable descriptor counts, so
-process exit cannot hide missing cleanup.
-
-The server generates bodies in fixed chunks. Child RSS is sampled for 8 MiB and
-64 MiB totals and recorded as observations, not hard process-memory thresholds or
-universal performance claims. Results, source/binary fingerprints and compiler
-transcripts default to ignored `.build/` outputs. This is regression coverage of
-a composition, not certification of a complete secure update protocol.
-
-The successful-transfer gate includes a withheld-last-byte barrier: the fixture
-waits until the prefix is written and confirms that no final entry exists before
-releasing the last byte. The reset case waits for every signed prefix byte to be
-written before an abortive TCP close. Source, compiler and consumer binary hashes
-and backend version metadata are checked before and after execution; changes
-reject the result rather than attributing observations to a moving tree. Backend
-version strings do not detect replacement of a library with the same version.
-Compiler transcripts contain only commands issued during that invocation; cached
-objects can omit compilation commands.
-
-Library cancellation reasons are opaque. This CLI maps its SIGINT/SIGTERM
-reasons to 130/143. Guard restoration errors appear separately as
-`cleanup_guard_error` and force nonzero exit; the completed library result can
-still have stage None and publication Applied.
+It needs Python cryptography and the dependencies above. It fetches pinned source
+packages but no external artifact service. Fixture CA injection is test-only;
+the production binary must reject that CA. See [validation](../../docs/VALIDATION.md)
+for scenarios, raw records and sanitizer details, and [AUDIT.md](../../docs/AUDIT.md)
+for checked commands/current sources. This is a correctness demonstration, not
+a transport throughput benchmark or hard memory-limit proof.
