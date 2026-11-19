@@ -598,7 +598,8 @@ def main():
             assert int(exact["received_bytes"]) == 262144 and int(exact["written_bytes"]) == 262144, exact
             # One byte over the budget is rejected by the HTTP layer before the
             # library ever sees a chunk: goose-http enforces body_limit in its
-            # native write callback (native/stream.c) and reports a transport
+            # pinned aa915a0b21db native write callback (stream.c:190) rejects
+            # n > body_limit - (total_bytes + ring.count), then reports a transport
             # error, so artifact.goose's own BodyLimit branch is unreachable
             # defence in depth, not a coverage gap that a test could close.
             case("body-cap", cap=262143, stage="HttpRead", publication="NotAttempted", returncode=1, final=None)

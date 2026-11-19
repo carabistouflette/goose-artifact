@@ -15,7 +15,8 @@ check:
 	"$(GOOSE)" format --check artifact.goose tests examples
 	"$(GOOSE)" check tests/api.goose
 	"$(GOOSE)" check examples/download/main.goose
-	python3 -m py_compile tests/*.py bench/measure.py examples/download/signals/fingerprint.py
+	python3 -m py_compile tests/*.py bench/measure.py bench/test_measure.py examples/download/signals/fingerprint.py
+	python3 bench/test_measure.py
 	git diff --check
 api:
 	mkdir -p .build
@@ -39,4 +40,4 @@ bench:
 	python3 bench/measure.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --output .build/bench.json
 bench-smoke:
 	mkdir -p .build
-	python3 bench/measure.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --sizes 65536,1048576 --samples 1,1 --controls 1 --startup-controls 1 --output .build/bench-smoke.json --force
+	run_dir=$$(mktemp -d .build/bench-smoke-XXXXXX); python3 bench/measure.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --sizes 65536,1048576 --samples 1,1 --controls 1 --startup-controls 1 --output "$$run_dir/record.json"

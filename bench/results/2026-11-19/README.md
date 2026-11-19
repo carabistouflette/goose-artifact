@@ -9,7 +9,10 @@ and comparison limits.
 `quality/download-benchmark-20261119`, empty `git status`) with the exact pinned
 Goose compiler `eadca409f68210893f366e60d0c2f0dc29a339be`
 (SHA-256 `3cad45a18356bf97f4732f1da2012252afd77a652932ddb9c91c5551c04904be`).
-This evidence-only commit does not change the measured implementation.
+The original raw file is unchanged. Its schema-1 harness predates the review
+fixes: it had no child deadline or per-sample journal, recorded backend versions
+without resolved-library hashes, and sampled without discarded warmups. These
+limitations are not repaired retroactively.
 
 Reproduce with:
 
@@ -22,7 +25,8 @@ make bench GOOSE=/path/to/pinned/goose
 One sample is one independent OS process invocation of
 `examples/download/main.goose`, which calls `artifact::execute` exactly once
 against an owned loopback HTTPS fixture. The reported interval runs from
-immediately before `Popen` to immediately after `wait()`, so it includes
+immediately before `Popen` through termination polling and pipe collection, so it includes
+parent polling/RSS and output-collection overhead as well as
 fork/exec, dynamic linking, the TLS handshake, the complete workflow and process
 exit. Fixture startup, certificate generation, metadata signing, temporary
 directory creation and all verification are outside the interval.
@@ -45,7 +49,8 @@ compiler wrapper text are in the raw record.
 ## Observations
 
 Twenty independent processes: 16 successes, 2 digest controls and 2 startup
-floors. Sizes were round-robined so drift is spread across workloads. All values
+floors. The first common repetitions were interleaved; extra 1 MiB repetitions
+and controls form a tail. No warmups were discarded. All values
 are end-to-end process wall time in milliseconds; outliers are retained.
 
 | Workload | n | Median ms | Range ms |
@@ -62,25 +67,24 @@ file whose size and SHA-256 match the fixture.
 
 ## What these numbers do and do not show
 
-The startup floor is roughly half of the 64 KiB sample, so at these sizes the
-sample is dominated by process startup and the TLS handshake. **No library
-throughput is isolated and no bytes-per-second figure is claimed.** Separating
-phases would require instrumenting the production API, which is out of scope.
+The signature-refusal controls measure a pre-network workflow. They do not
+isolate startup, TLS, producer, filesystem or individual library costs.
+**No library throughput or causal phase attribution is established.**
 
 The digest control is the work proof. It transfers, hashes and writes the whole
-1 MiB body and only then fails at `DigestMismatch`; its timings (30.69, 33.50 ms)
-sit inside the 1 MiB success range, as they must if the timed path performs the
-same real work. The startup floor transfers zero bytes and is correspondingly
-cheaper. A folded idle path could not satisfy both assertions.
+1 MiB body and only then fails at `DigestMismatch`; one of its observations lies outside the success range. That does not invalidate
+the independent output/counter checks, but overlapping timings are not a required
+work proof. The signature controls transfer zero bytes.
+A folded idle path could not satisfy both assertions.
 
 The difference between the 4 MiB and 64 KiB medians is 37.1 ms for 4,128,768
 additional bytes. That is a difference of two end-to-end process medians, not an
 isolated library throughput, and it is not a performance claim.
 
-Sampled `VmHWM` was about 15.0–15.2 MiB for successful runs and 6.5–7.7 MiB for
-startup floors, so the HTTP/TLS stack accounts for roughly 8 MiB of the resident
-high-water mark. This is a polled observation and a lower bound on the true
-peak, not a hard memory promise.
+Sampled `VmHWM` was 14,896–15,172 KiB for successes and 6,540–7,728 KiB
+for signature controls (approximately 14.55–14.82 and 6.39–7.55 MiB).
+The difference is not isolated to HTTP/TLS; these workflows differ in several
+phases. Polling gives a lower-bound observation of peak RSS, not a hard promise.
 
 ## Limits
 
