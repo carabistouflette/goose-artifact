@@ -592,6 +592,15 @@ def main():
             wrong_digest = json.dumps({"url": url, "sha256": "0" * 64}).encode()
             case("digest-mismatch", raw=wrong_digest, stage="DigestMismatch", publication="NotAttempted",
                  returncode=1, final=None)
+            # The exact budget is reachable and must publish: received_bytes and
+            # written_bytes both reach byte_limit and the stream ends cleanly.
+            exact = case("exact-budget", size=262144, cap=262144)
+            assert int(exact["received_bytes"]) == 262144 and int(exact["written_bytes"]) == 262144, exact
+            # One byte over the budget is rejected by the HTTP layer before the
+            # library ever sees a chunk: goose-http enforces body_limit in its
+            # native write callback (native/stream.c) and reports a transport
+            # error, so artifact.goose's own BodyLimit branch is unreachable
+            # defence in depth, not a coverage gap that a test could close.
             case("body-cap", cap=262143, stage="HttpRead", publication="NotAttempted", returncode=1, final=None)
             case("header-cap", padding=17000, stage="HttpRead", publication="NotAttempted", returncode=1, final=None)
             # Metadata signs the exact bytes actually sent. Matching their digest
