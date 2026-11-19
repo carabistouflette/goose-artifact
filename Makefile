@@ -4,7 +4,7 @@ SANITIZER_CC ?= gcc
 OUTPUT ?= .build/results.json
 CFLAGS = -std=c11 -Wall -Wextra -Werror
 .NOTPARALLEL:
-.PHONY: setup format check api signals test sanitize
+.PHONY: setup format check api signals test sanitize bench bench-smoke
 setup:
 	./scripts/setup-goose.sh
 format:
@@ -15,7 +15,8 @@ check:
 	"$(GOOSE)" format --check artifact.goose tests examples
 	"$(GOOSE)" check tests/api.goose
 	"$(GOOSE)" check examples/download/main.goose
-	python3 -m py_compile tests/*.py examples/download/signals/fingerprint.py
+	python3 -m py_compile tests/*.py bench/measure.py bench/test_measure.py examples/download/signals/fingerprint.py
+	python3 bench/test_measure.py
 	git diff --check
 api:
 	mkdir -p .build
@@ -34,3 +35,9 @@ sanitize:
 	$(SANITIZER_CC) $(CFLAGS) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -no-pie examples/download/signals/test.c examples/download/signals/signals.c -Wl,--wrap=sigaction -o .build/signals-sanitize-$(notdir $(SANITIZER_CC))
 	ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 UBSAN_OPTIONS=halt_on_error=1 ./.build/signals-sanitize-$(notdir $(SANITIZER_CC))
 	python3 tests/integration.py --goose "$(abspath $(GOOSE))" --cc "$(SANITIZER_CC)" --sanitize --output "$(OUTPUT)"
+bench:
+	mkdir -p .build
+	python3 bench/measure.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --output .build/bench.json
+bench-smoke:
+	mkdir -p .build
+	run_dir=$$(mktemp -d .build/bench-smoke-XXXXXX); python3 bench/measure.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --sizes 65536,1048576 --samples 1,1 --controls 1 --startup-controls 1 --output "$$run_dir/record.json"
